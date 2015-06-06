@@ -38,6 +38,8 @@
 #define IRQ_SPURIOUS     7
 #define IRQ_IDE         14
 #define IRQ_ERROR       19
+#define USER_DPL        3
+
 
 #ifndef __ASSEMBLER__
 

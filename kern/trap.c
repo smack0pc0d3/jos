@@ -25,6 +25,8 @@ struct Pseudodesc idt_pd = {
 	sizeof(idt) - 1, (uint32_t) idt
 };
 
+extern uint32_t trap_handlers[];
+
 
 static const char *trapname(int trapno)
 {
@@ -62,10 +64,16 @@ static const char *trapname(int trapno)
 void
 trap_init(void)
 {
+    register int i;
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
-
+    for (i = 0; i < sizeof(idt)/sizeof(idt[0]); i++)
+        SETGATE(idt[i], 0, GD_KT, trap_handlers[i], 0);
+    // init break point
+    SETGATE(idt[T_BRKPT], 0, GD_KT, trap_handlers[T_BRKPT], USER_DPL);
+    // init syscall
+    SETGATE(idt[T_SYSCALL], 0, GD_KT, trap_handlers[T_SYSCALL], USER_DPL);
 	// Per-CPU setup 
 	trap_init_percpu();
 }
@@ -143,15 +151,30 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
-
-	// Unexpected trap: The user process or the kernel has a bug.
-	print_trapframe(tf);
-	if (tf->tf_cs == GD_KT)
-		panic("unhandled trap in kernel");
-	else {
-		env_destroy(curenv);
-		return;
-	}
+    switch (tf->tf_trapno) {
+        case T_PGFLT:
+            page_fault_handler(tf);
+            break;
+        case T_BRKPT:
+            print_trapframe(tf);
+            monitor(tf);
+            break;
+        case T_SYSCALL:
+            tf->tf_regs.reg_eax = syscall((uint32_t)tf->tf_regs.reg_eax, 
+                    (uint32_t)tf->tf_regs.reg_edx, (uint32_t)tf->tf_regs.reg_ecx, 
+                    (uint32_t)tf->tf_regs.reg_ebx, (uint32_t)tf->tf_regs.reg_edi, 
+                    (uint32_t)tf->tf_regs.reg_esi);
+            break;
+        default:
+            // Unexpected trap: The user process or the kernel has a bug.
+            print_trapframe(tf);
+            if (tf->tf_cs == GD_KT)
+                panic("unhandled trap in kernel");
+            else {
+                env_destroy(curenv);
+                return;
+            }
+    }
 }
 
 void
@@ -204,6 +227,8 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+    if ((tf->tf_cs & USER_DPL) != USER_DPL) 
+        panic("Kernel page fault!\n");
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
