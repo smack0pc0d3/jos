@@ -273,6 +273,18 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+    register int i;
+    uintptr_t kstacktop_i;
+    
+    for (i = 0; i < NCPU; i++) {
+        kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+        boot_map_region(kern_pgdir, kstacktop_i-KSTKSIZE, ROUNDUP((KSTKSIZE),
+                    PGSIZE), PADDR((void *)percpu_kstacks[i]), (PTE_P | PTE_W));
+        /*
+        boot_map_region(kern_pgdir, kstacktop_i - (KSTKSIZE + KSTKGAP), ROUNDUP((KSTKGAP),
+                    PGSIZE), 0x00, PTE_P);
+        */
+    }
 
 }
 
@@ -315,8 +327,9 @@ page_init(void)
 	size_t i;
     cprintf("limit: 0x%x\n", (size_t )boot_alloc(0)-KERNBASE);
 	for (i = 0; i < npages; i++) {
-        if (!i || ( i * PGSIZE >= IOPHYSMEM && 
-                    i * PGSIZE <= ((size_t )boot_alloc(0)-KERNBASE))) {
+        if (!i || i * PGSIZE == MPENTRY_PADDR
+                || ( i * PGSIZE >= IOPHYSMEM 
+                && i * PGSIZE <= ((size_t )boot_alloc(0)-KERNBASE))) {
             pages[i].pp_ref = 1;
             pages[i].pp_link = NULL;
         }
