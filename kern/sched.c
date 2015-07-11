@@ -11,7 +11,8 @@ void sched_halt(void);
 void
 sched_yield(void)
 {
-	struct Env *idle;
+	struct Env *idle, *next;
+    register int i;
 
 	// Implement simple round-robin scheduling.
 	//
@@ -27,10 +28,26 @@ sched_yield(void)
 	// another CPU (env_status == ENV_RUNNING). If there are
 	// no runnable environments, simply drop through to the code
 	// below to halt the cpu.
-
 	// LAB 4: Your code here.
-
-	// sched_halt never returns
+    next = NULL;
+    if (curenv) {
+        for (idle = curenv->env_link; idle != curenv; idle = idle->env_link)
+            if (idle->env_status == ENV_RUNNABLE) {
+                next = idle;
+                break;
+            }
+        if (!next)
+            next = curenv;
+    }
+    else {
+        for (i = 0; i < NENV; i++)
+            if (envs[i].env_status == ENV_RUNNABLE) {
+                next = &envs[i];
+                break;
+            }
+    }
+    if (next)
+        env_run(next);
 	sched_halt();
 }
 
@@ -66,7 +83,7 @@ sched_halt(void)
 	xchg(&thiscpu->cpu_status, CPU_HALTED);
 
 	// Release the big kernel lock as if we were "leaving" the kernel
-	unlock_kernel();
+	//unlock_kernel();
 
 	// Reset stack pointer, enable interrupts and then halt.
 	asm volatile (

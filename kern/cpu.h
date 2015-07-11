@@ -36,6 +36,7 @@ extern unsigned char percpu_kstacks[NCPU][KSTKSIZE];
 
 int cpunum(void);
 #define thiscpu (&cpus[cpunum()])
+#define curstack KSTACKTOP - cpunum() * (KSTKSIZE + KSTKGAP) - KSTKSIZE;
 
 void mp_init(void);
 void lapic_init(void);
