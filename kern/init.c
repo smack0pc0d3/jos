@@ -40,7 +40,7 @@ i386_init(void)
 	// Lab 3 user environment initialization functions
 	env_init();
 	trap_init();
-
+    /*
 	// Lab 4 multiprocessor initialization functions
 	mp_init();
 	lapic_init();
@@ -53,7 +53,7 @@ i386_init(void)
 
 	// Starting non-boot CPUs
 	boot_aps();
-
+    
 #if defined(TEST)
 	// Don't touch -- used by grading script!
 	ENV_CREATE(TEST, ENV_TYPE_USER);
@@ -61,9 +61,9 @@ i386_init(void)
 	// Touch all you want.
 	ENV_CREATE(user_primes, ENV_TYPE_USER);
 #endif // TEST*
-
-	// Schedule and run the first user environment!
-	sched_yield();
+*/
+    ENV_CREATE(user_hello, ENV_TYPE_USER); 
+    env_run(&envs[0]);
 }
 
 // While boot_aps is booting a given CPU, it communicates the per-core
