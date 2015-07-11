@@ -315,8 +315,9 @@ page_init(void)
 	size_t i;
     cprintf("limit: 0x%x\n", (size_t )boot_alloc(0)-KERNBASE);
 	for (i = 0; i < npages; i++) {
-        if (!i || ( i * PGSIZE >= IOPHYSMEM && 
-                    i * PGSIZE <= ((size_t )boot_alloc(0)-KERNBASE))) {
+        if (!i || i * PGSIZE == MPENTRY_PADDR
+                || ( i * PGSIZE >= IOPHYSMEM 
+                && i * PGSIZE <= ((size_t )boot_alloc(0)-KERNBASE))) {
             pages[i].pp_ref = 1;
             pages[i].pp_link = NULL;
         }
