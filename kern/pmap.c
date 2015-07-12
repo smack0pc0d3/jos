@@ -167,10 +167,8 @@ mem_init(void)
 	// or page_insert
 	page_init();
     check_page_free_list(1);
-    /*
 	check_page_alloc();
 	check_page();
-    */
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory
 
@@ -182,8 +180,6 @@ mem_init(void)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
     //boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm);
-    cprintf("UPAGES: 0x%x\n", pages);
-    cprintf("PAGES: 0x%x\n", PADDR(pages));
     boot_map_region(kern_pgdir, UPAGES, 
             ROUNDUP((sizeof(struct PageInfo) * npages), PGSIZE),
             PADDR(pages), (PTE_U | PTE_P));
@@ -222,7 +218,7 @@ mem_init(void)
 	// Your code goes here:
 
 	// Initialize the SMP-related parts of the memory map
-	//mem_init_mp();
+	mem_init_mp();
 
     boot_map_region(kern_pgdir, KERNBASE, ROUNDUP((0xFFFFFFFF-KERNBASE),
                 PGSIZE), 0x0, (PTE_P | PTE_W));
@@ -238,7 +234,7 @@ mem_init(void)
 	// kern_pgdir wrong.
 	lcr3(PADDR(kern_pgdir));
 
-	//check_page_free_list(0);
+	check_page_free_list(0);
 
 	// entry.S set the really important flags in cr0 (including enabling
 	// paging).  Here we configure the rest of the flags that we care about.
@@ -248,7 +244,7 @@ mem_init(void)
 	lcr0(cr0);
 
 	// Some more checks, only possible after kern_pgdir is installed.
-	//check_page_installed_pgdir();
+	check_page_installed_pgdir();
 }
 
 // Modify mappings in kern_pgdir to support SMP
@@ -325,7 +321,6 @@ page_init(void)
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
 	size_t i;
-    cprintf("limit: 0x%x\n", (size_t )boot_alloc(0)-KERNBASE);
 	for (i = 0; i < npages; i++) {
         if (!i || i * PGSIZE == MPENTRY_PADDR
                 || ( i * PGSIZE >= IOPHYSMEM 
