@@ -32,9 +32,9 @@ sched_yield(void)
 	// LAB 4: Your code here.
     idle = NULL;
     if (curenv) {
-        for (i = ENVX(curenv->env_id); i < NENV; i++)
-            if (envs[i].env_status == ENV_RUNNABLE) {
-                idle = &envs[i];
+        for (i = ENVX(curenv->env_id)+1; i < NENV+(NENV-ENVX(curenv->env_id)); i++)
+            if (envs[i%NENV].env_status == ENV_RUNNABLE) {
+                idle = &envs[i%NENV];
                 break;
             }
         if (!idle)

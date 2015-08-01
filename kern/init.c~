@@ -52,19 +52,14 @@ i386_init(void)
     lock_kernel();
 	// Starting non-boot CPUs
 	boot_aps();
-    /*
 #if defined(TEST)
 	// Don't touch -- used by grading script!
 	ENV_CREATE(TEST, ENV_TYPE_USER);
 #else
 	// Touch all you want.
 	ENV_CREATE(user_primes, ENV_TYPE_USER);
-#endif // TEST*
-    */
-    ENV_CREATE(user_yield, ENV_TYPE_USER); 
-    ENV_CREATE(user_yield, ENV_TYPE_USER); 
-    ENV_CREATE(user_yield, ENV_TYPE_USER); 
-    ENV_CREATE(user_yield, ENV_TYPE_USER);
+#endif // TEST
+    //ENV_CREATE(user_sendpage, ENV_TYPE_USER);
     sched_yield();
 }
 

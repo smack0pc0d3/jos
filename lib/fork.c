@@ -24,7 +24,8 @@ pgfault(struct UTrapframe *utf)
 	//   Use the read-only page table mappings at uvpt
 	//   (see <inc/memlayout.h>).
 
-	// LAB 4: Your code here.
+    if (!(err & 2 && uvpt[(uint32_t)addr/PGSIZE] & PTE_COW))
+        panic("pgfault not writable page\n");
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
@@ -32,10 +33,12 @@ pgfault(struct UTrapframe *utf)
 	// Hint:
 	//   You should make three system calls.
 	//   No need to explicitly delete the old page's mapping.
-
-	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+    if ((r = sys_page_alloc(sys_getenvid(), PFTEMP, PTE_W | PTE_P| PTE_U)))
+        panic("sys_page_alloc returned %e\n", r);
+    memmove((char *)PFTEMP, (char *)ROUNDDOWN((uint32_t)utf->utf_fault_va, PGSIZE), PGSIZE);
+     if ((r = sys_page_map(sys_getenvid(), (void *)PFTEMP, sys_getenvid(), (void *)ROUNDDOWN((uint32_t)utf->utf_fault_va, PGSIZE),
+                     PTE_W | PTE_P| PTE_U)))
+         panic("sys_page_map returned %e\n", r);
 }
 
 //
@@ -52,10 +55,16 @@ pgfault(struct UTrapframe *utf)
 static int
 duppage(envid_t envid, unsigned pn)
 {
-	int r;
+	int r, flags;
+    unsigned int va;
+    
+    va = pn * PGSIZE;
+    flags = (uvpt[pn] & PTE_W || uvpt[pn] & PTE_COW)?( PTE_P | PTE_COW | PTE_U):PGOFF(uvpt[pn]);
+    if ((r = sys_page_map(sys_getenvid(), (void *)va, envid, (void *)va, flags)))
+        return r;
+    if ((r = sys_page_map(sys_getenvid(), (void *)va, sys_getenvid(), (void *)va, flags)))
+        return r;
 
-	// LAB 4: Your code here.
-	panic("duppage not implemented");
 	return 0;
 }
 
@@ -78,8 +87,37 @@ duppage(envid_t envid, unsigned pn)
 envid_t
 fork(void)
 {
-	// LAB 4: Your code here.
-	panic("fork not implemented");
+    int r;
+    envid_t cpid;
+    register unsigned int i, j;
+    unsigned int pn;
+
+    set_pgfault_handler(pgfault);
+    if ((cpid = sys_exofork()) == -1) 
+        panic("sys_exofork returned %e\n", cpid);
+    else if (cpid) {
+        //uvpd = page directory
+        for (i = 0; i < PDX(UTOP); i++)
+            //page_table exists
+            if (uvpd[i] & PTE_P)
+                for (j = 0; j < NPTENTRIES; j++) {
+                    pn = i * NPTENTRIES + j;
+                    //if page exists
+                    if (uvpt[pn] & (PTE_P|PTE_U) &&
+                            pn != PGNUM(UXSTACKTOP - PGSIZE))
+                        if ((r = duppage(cpid, pn)))
+                            panic("duppage %e\n", r);
+                }
+        if ((r = sys_env_set_pgfault_upcall(cpid, thisenv->env_pgfault_upcall)))
+            panic("sys_env_set_pgfault_upcall returned %e\n", r);
+        if ((r = sys_page_alloc(cpid, (void *)UXSTACKTOP-PGSIZE, PTE_U|PTE_P|PTE_W)))
+            panic("sys_page_alloc returned %e\n", r);
+        if ((r = sys_env_set_status(cpid, ENV_RUNNABLE)))
+            panic("sys_env_set_status returned %e\n", r);
+    }
+    else
+        thisenv = &envs[ENVX(sys_getenvid())];
+    return cpid;
 }
 
 // Challenge!

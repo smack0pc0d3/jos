@@ -355,10 +355,6 @@ page_alloc(int alloc_flags)
 
     if (!(pp = page_free_list))
         return NULL;
-    /*
-    if (!pp->pp_link)
-        page_free_list = NULL;
-    */
     page_free_list = pp->pp_link;
     pp->pp_link = NULL;
     if (alloc_flags & ALLOC_ZERO)
@@ -418,12 +414,13 @@ page_decref(struct PageInfo* pp)
 // table and page directory entries.
 //
 //pg_dir = cr3
-//pg_tbl = cr3[PDX(va)]
+//pg_tbl = pg_dir[PDX(va)]
 //page = pg_tbl[PTX(va)];
 //page_addr = page[va & 0xfff]
 //PTE_ADDR for eliminating the flags
 //
 //function gets pgdir and page_table
+/*
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
@@ -445,6 +442,28 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 
 	return (pte_t *)page2kva(pgtbl)+PTX(va);
 }
+*/
+pte_t *
+pgdir_walk(pde_t *pgdir, const void *va, int create)
+{
+    struct PageInfo *pg;
+    //if page table doesn't exists
+    if (!create && !(pgdir[PDX(va)] & PTE_P))
+        return NULL;
+    else if (pgdir[PDX(va)] & PTE_P)
+        //turn page_table ph addr to pg struct
+        pg = pa2page((physaddr_t)pgdir[PDX(va)]);
+    else {
+        if (!(pg = page_alloc(ALLOC_ZERO)))
+            return NULL;
+        pg->pp_ref++;
+        pgdir[PDX(va)] = page2pa(pg) | PTE_P | PTE_W | PTE_U;
+    }
+
+    //return virtual addr of page_table_entry
+	return (pte_t *)page2kva(pg)+PTX(va);
+}
+
 
 //
 // Map [va, va+size) of virtual address space to physical [pa, pa+size)
@@ -460,15 +479,15 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
-    pte_t *pgtbl;
+    pte_t *pte;
     size_t sz;
 
     assert(size % PGSIZE == 0 && va % PGSIZE == 0 && pa % PGSIZE == 0);
 
     for (sz = 0; sz < size; sz += PGSIZE) {
-        if (!(pgtbl = pgdir_walk(pgdir, (void *)va+sz, 1)))
+        if (!(pte = pgdir_walk(pgdir, (void *)va+sz, 1)))
             panic("boot_map_region: pgdir_walk returned NULL\n");
-        *pgtbl = (pte_t )(pa+sz) | perm;
+        *pte = (pte_t )(pa+sz) | perm;
     }
 }
 
@@ -500,21 +519,21 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
-    pte_t *pgtbl;
+    pte_t *pte;
     
-    if (!(pgtbl = pgdir_walk(pgdir, va, 1)))
+    if (!(pte = pgdir_walk(pgdir, va, 1)))
         return -E_NO_MEM;
 
     //if page exists
-    if (*pgtbl & PTE_P) {
+    if (*pte & PTE_P) {
         //if page contains the same pp
-        if (PTE_ADDR(*pgtbl) == page2pa(pp)) {
-            *pgtbl = PTE_ADDR(*pgtbl) | perm | PTE_P;
+        if (PTE_ADDR(*pte) == page2pa(pp)) {
+            *pte = PTE_ADDR(*pte) | perm | PTE_P;
             return 0;
         }
         page_remove(pgdir, va);
     }
-    *pgtbl = page2pa(pp) | perm | PTE_P;
+    *pte = page2pa(pp) | perm | PTE_P;
     pp->pp_ref++;
 
 	return 0;
@@ -534,16 +553,15 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
-    pte_t *pgtbl;
+    pte_t *pte;
 
-    if (!(pgtbl = pgdir_walk(pgdir, va, 0)))
+    if (!(pte = pgdir_walk(pgdir, va, 0)))
             return NULL;
     if (pte_store)
-        //*pte_store = (pte_t *)*pgtbl;
-        *pte_store = (pte_t *)pgtbl;
+        *pte_store = (pte_t *)pte;
 
 	// Fill this function in
-	return pa2page(*pgtbl);
+	return pa2page(*pte);
 }
 
 //
@@ -572,8 +590,6 @@ page_remove(pde_t *pgdir, void *va)
     page_decref(pg);
     *pte = 0;
     tlb_invalidate(pgdir, pg);
-
-	// Fill this function in
 }
 
 //
@@ -652,12 +668,12 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
     register int i;
-    pte_t *pg;
+    pte_t *pte;
 
     for (i = 0; i < len/PGSIZE+(!(len % PGSIZE)? 0 : 1); i++) {
-        pg = pgdir_walk(env->env_pgdir, ROUNDDOWN(va+i*PGSIZE, PGSIZE), 0); 
-        if (pg == NULL || va > (void *)ULIM ||
-                ((int)*pg & perm) != perm) {
+        pte = pgdir_walk(env->env_pgdir, ROUNDDOWN(va+i*PGSIZE, PGSIZE), 0); 
+        if (pte == NULL || va > (void *)ULIM ||
+                ((int)*pte & perm) != perm) {
             user_mem_check_addr = (uintptr_t)va;
             return -E_FAULT;
         }
@@ -677,7 +693,7 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 void
 user_mem_assert(struct Env *env, const void *va, size_t len, int perm)
 {
-	if (user_mem_check(env, va, len, perm | PTE_U) < 0) {
+	if (user_mem_check(env, va, len, perm | PTE_U | PTE_P) < 0) {
 		cprintf("[%08x] user_mem_check assertion failure for "
 			"va %08x\n", env->env_id, user_mem_check_addr);
 		env_destroy(env);	// may not return
@@ -858,7 +874,6 @@ check_kern_pgdir(void)
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
 		assert(check_va2pa(pgdir, KERNBASE + i) == i);
 
-    /*
 	// check kernel stack
 	// (updated in lab 4 to check per-CPU kernel stacks)
 	for (n = 0; n < NCPU; n++) {
@@ -890,7 +905,6 @@ check_kern_pgdir(void)
 		}
 	}
 	cprintf("check_kern_pgdir() succeeded!\n");
-    */
 }
 
 // This function returns the physical address of the page containing 'va',
